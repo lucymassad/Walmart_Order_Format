@@ -65,30 +65,31 @@ CASE_SIZE = {
     "665031676": 48, "665029762": 48,
 }
 
-def _norm(s):
-    return re.sub(r"[^a-z0-9]+", "", str(s).lower())
+def _norm(s): return re.sub(r"[^a-z0-9]+", "", str(s).lower())
 
 def _find_col(df, candidates):
     norm_map = {_norm(c): c for c in df.columns}
     for cand in candidates:
         k = _norm(cand)
-        if k in norm_map:
-            return norm_map[k]
+        if k in norm_map: return norm_map[k]
     for c in df.columns:
-        if any(_norm(x) in _norm(c) for x in candidates):
-            return c
+        if any(_norm(x) in _norm(c) for x in candidates): return c
     return None
 
 def _clean_numeric_text(s):
     if pd.isna(s): return pd.NA
-    t = str(s).strip()
-    t = t.replace(",", "").replace("$", "")
+    t = str(s).replace(",", "").replace("$", "").strip()
     return t if re.search(r"\d", t) else pd.NA
 
+def _extract_first_date(s):
+    if pd.isna(s): return pd.NA
+    s = str(s)
+    m = re.findall(r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', s)
+    return m[0] if m else s
+
 def _fmt_date_text(s):
-    if pd.isna(s) or str(s).strip()=="":
-        return pd.NA
-    x = pd.to_datetime(s, errors="coerce")
+    v = _extract_first_date(s)
+    x = pd.to_datetime(v, errors="coerce")
     return x.strftime("%m/%d/%Y") if pd.notna(x) else pd.NA
 
 def _schema_select(raw):
@@ -96,7 +97,7 @@ def _schema_select(raw):
         "PO Number": ["PO Number","PO #","PONumber","PO"],
         "PO Date": ["PO Date","Order Date","PODate"],
         "Retailers PO": ["Retailers PO","Retailer PO","RetailersPO"],
-        "Ship Dates": ["Ship Dates","Ship Date","ShipDate"],
+        "Ship Dates": ["Ship Dates","Ship Date","Delivery Dates","Requested Delivery Date"],
         "Cancel Date": ["Cancel Date","CancelDate"],
         "PO Line #": ["PO Line #","PO Line","Line #","Line Number"],
         "Qty Ordered": ["Qty Ordered","Quantity Ordered","Qty"],
@@ -138,6 +139,11 @@ def _schema_select(raw):
             continue
         src = _find_col(raw, name_map.get(out_col, [out_col]))
         sel[out_col] = raw[src] if src is not None else pd.NA
+    # types
+    for c in DATE_COLS:
+        sel[c] = sel[c].apply(_fmt_date_text)
+    for c in NUMERIC_TEXT_COLS:
+        sel[c] = sel[c].apply(_clean_numeric_text)
     return sel
 
 def _apply_bc_cases(sel):
@@ -145,7 +151,7 @@ def _apply_bc_cases(sel):
     sel["BC Item#"] = key.map(lambda k: MAP_BC.get(k, (None, None))[0])
     sel["BC Item Name"] = key.map(lambda k: MAP_BC.get(k, (None, None))[1])
     case_sz = key.map(CASE_SIZE)
-    qty = pd.to_numeric(sel["Qty Ordered"].apply(_clean_numeric_text), errors="coerce")
+    qty = pd.to_numeric(sel["Qty Ordered"], errors="coerce")
     full_cases = pd.Series(pd.NA, index=sel.index, dtype="Int64")
     leftover = pd.Series(pd.NA, index=sel.index, dtype="Int64")
     mask = case_sz.notna() & qty.notna() & (case_sz.astype(float) > 0)
@@ -155,42 +161,25 @@ def _apply_bc_cases(sel):
     sel["Qty Leftover"] = leftover
     return sel
 
-def _normalize_types(sel):
-    for c in DATE_COLS:
-        sel[c] = sel[c].apply(_fmt_date_text)
-    for c in NUMERIC_TEXT_COLS:
-        sel[c] = sel[c].apply(_clean_numeric_text)
-    return sel
+def _agg_join(series):
+    vals = [v for v in series if pd.notna(v) and str(v).strip()!=""]
+    if not vals: return pd.NA
+    uniq, seen = [], set()
+    for v in vals:
+        if v not in seen:
+            uniq.append(v); seen.add(v)
+    return uniq[0] if len(uniq)==1 else " | ".join(uniq)
 
 def _consolidate(sel):
-    prio = {"H":0,"O":1,"D":2,"C":3,"T":4,"S":5,"A":6,"F":7}
-    rt = sel["Record Type"] if "Record Type" in sel.columns else pd.Series(pd.NA, index=sel.index)
-    sel["__prio"] = rt.map(lambda x: prio.get(str(x).strip().upper(), 99) if pd.notna(x) else 99)
-    po = "PO Number"
-    line = "PO Line #"
-    gcols = [c for c in [po, line] if c in sel.columns]
-    if not gcols:
-        groups = [sel]
-    else:
-        groups = [sub for _, sub in sel.groupby(gcols, dropna=False)]
-    rows = []
-    for grp in groups:
-        grp = grp.sort_values("__prio", kind="stable")
-        out = {}
-        for c in OUTPUT_COLUMNS:
-            vals = [v for v in grp[c].tolist() if pd.notna(v) and str(v).strip() != ""]
-            if not vals:
-                out[c] = pd.NA
-            else:
-                uniq = []
-                seen = set()
-                for v in vals:
-                    if v not in seen:
-                        uniq.append(v); seen.add(v)
-                out[c] = uniq[0] if len(uniq) == 1 else " | ".join(uniq)
-        rows.append(out)
-    out_df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
-    return out_df
+    po_agg = sel.groupby("PO Number", dropna=True).agg(_agg_join)
+    line_valid = sel[sel["PO Line #"].notna() & (sel["PO Line #"].astype(str).str.strip()!="")]
+    line_agg = line_valid.groupby(["PO Number","PO Line #"], dropna=True).agg(_agg_join).reset_index()
+    for c in OUTPUT_COLUMNS:
+        if c in ["PO Number","PO Line #","Full Cases","Qty Leftover"]:
+            continue
+        mask = line_agg[c].isna() | (line_agg[c].astype(str).str.strip()=="")
+        line_agg.loc[mask, c] = line_agg.loc[mask, "PO Number"].map(po_agg[c])
+    return line_agg[OUTPUT_COLUMNS]
 
 if uploaded_file:
     try:
@@ -200,17 +189,14 @@ if uploaded_file:
         st.stop()
 
     raw.columns = [c.strip() for c in raw.columns]
-    for c in raw.columns:
-        s = raw[c].astype(str).str.strip()
-        raw[c] = s.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+    raw = raw.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
 
     sel = _schema_select(raw)
     sel = _apply_bc_cases(sel)
-    sel = _normalize_types(sel)
     out_df = _consolidate(sel)
 
     tz = pytz.timezone("America/New_York")
     ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
     fname = f"Walmart_Export_{ts}.csv"
-    csv_bytes = out_df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("Download Walmart Export (CSV)", data=csv_bytes, file_name=fname, mime="text/csv")
+    st.download_button("Download Walmart Export (CSV)", data=out_df.to_csv(index=False).encode("utf-8-sig"),
+                       file_name=fname, mime="text/csv")
