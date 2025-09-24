@@ -11,20 +11,18 @@ st.markdown("Upload Walmart CSV file.")
 uploaded_file = st.file_uploader("Upload Walmart File (.csv only)", type=["csv"])
 
 OUTPUT_COLUMNS = [
-    "PO Number","PO Date","Retailers PO","Ship Dates","Cancel Date","PO Line #",
-    "BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover","Unit of Measure","Unit Price",
-    "Buyers Catalog or Stock Keeping #","UPC/EAN","Vendor Style","Number of Inner Packs",
-    "Vendor #","Promo #","Ticket Description","Other Info / #s","Frt Terms","Payment Terms %",
-    "Payment Terms Disc Days Due","Payment Terms Net Days","Allow/Charge Type","Allow/Charge Service",
+    "PO Line #","Vendor Style","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover",
+    "Unit of Measure","Unit Price","Buyers Catalog or Stock Keeping #","UPC/EAN","Number of Inner Packs",
+    "Vendor #","Promo #","Ticket Description","Other Info / #s",
     "Buying Party Name","Buying Party Location","Buying Party Address 1","Buying Party Address 2",
-    "Buying Party City","Buying Party State","Buying Party Zip","Buying Party Country",
-    "Notes/Comments","GTIN","PO Total Amount","Must Arrive By","EDITxnType"
+    "Buying Party City","Buying Party State","Buying Party Zip",
+    "Notes/Comments","GTIN","PO Total Amount","Must Arrive By","EDITxnType",
+    "PO Number","PO Date"
 ]
 
-DATE_COLS = ["PO Date","Ship Dates","Cancel Date","Must Arrive By"]
+DATE_COLS = ["PO Date","Must Arrive By"]
 NUMERIC_TEXT_COLS = [
-    "Qty Ordered","Unit Price","Number of Inner Packs","Payment Terms %",
-    "Payment Terms Disc Days Due","Payment Terms Net Days","PO Total Amount","GTIN","UPC/EAN","PO Line #"
+    "Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount","GTIN","UPC/EAN","PO Line #"
 ]
 
 MAP_BC = {
@@ -96,27 +94,18 @@ def _schema_select(raw):
     name_map = {
         "PO Number": ["PO Number","PO #","PONumber","PO"],
         "PO Date": ["PO Date","Order Date","PODate"],
-        "Retailers PO": ["Retailers PO","Retailer PO","RetailersPO"],
-        "Ship Dates": ["Ship Dates","Ship Date","Delivery Dates","Requested Delivery Date"],
-        "Cancel Date": ["Cancel Date","CancelDate"],
         "PO Line #": ["PO Line #","PO Line","Line #","Line Number"],
+        "Vendor Style": ["Vendor Style","Style"],
         "Qty Ordered": ["Qty Ordered","Quantity Ordered","Qty"],
         "Unit of Measure": ["Unit of Measure","UOM","Unit"],
         "Unit Price": ["Unit Price","Price","UnitPrice","Cost"],
         "Buyers Catalog or Stock Keeping #": ["Buyers Catalog or Stock Keeping #","Buyers Catalog #","SKU","Catalog #","Buyer SKU"],
         "UPC/EAN": ["UPC/EAN","UPC","EAN","UPC Code"],
-        "Vendor Style": ["Vendor Style","Style"],
         "Number of Inner Packs": ["Number of Inner Packs","Inner Packs","Inner Pack Count","InnerPack"],
         "Vendor #": ["Vendor #","Vendor Number","Vendor ID","VendorID"],
         "Promo #": ["Promo #","Promo Number","Promotion #","Promo"],
         "Ticket Description": ["Ticket Description","Ticket Desc","Description","Item Description"],
         "Other Info / #s": ["Other Info / #s","Other Info","Other Numbers","Other #s"],
-        "Frt Terms": ["Frt Terms","Freight Terms","Freight"],
-        "Payment Terms %": ["Payment Terms %","Payment Terms Percent","Terms %"],
-        "Payment Terms Disc Days Due": ["Payment Terms Disc Days Due","Disc Days Due","Discount Days"],
-        "Payment Terms Net Days": ["Payment Terms Net Days","Net Days","Terms Net"],
-        "Allow/Charge Type": ["Allow/Charge Type","Allowance Type","Charge Type"],
-        "Allow/Charge Service": ["Allow/Charge Service","Allowance Service","Charge Service"],
         "Buying Party Name": ["Buying Party Name","Buyer Name","Ship To Name","ST Name"],
         "Buying Party Location": ["Buying Party Location","Buyer Location","Location #","Location"],
         "Buying Party Address 1": ["Buying Party Address 1","Address 1","Addr1","Address1"],
@@ -124,7 +113,6 @@ def _schema_select(raw):
         "Buying Party City": ["Buying Party City","City","Town"],
         "Buying Party State": ["Buying Party State","State","Province"],
         "Buying Party Zip": ["Buying Party Zip","Zip","Postal Code","ZIP Code"],
-        "Buying Party Country": ["Buying Party Country","Country"],
         "Notes/Comments": ["Notes/Comments","Notes","Comments","Comment"],
         "GTIN": ["GTIN","GTIN-14"],
         "PO Total Amount": ["PO Total Amount","Total Amount","PO Amount","Order Total"],
@@ -135,67 +123,3 @@ def _schema_select(raw):
     sel = pd.DataFrame(index=raw.index)
     for out_col in OUTPUT_COLUMNS + ["Record Type"]:
         if out_col in ["BC Item#","BC Item Name","Full Cases","Qty Leftover"]:
-            sel[out_col] = pd.NA
-            continue
-        src = _find_col(raw, name_map.get(out_col, [out_col]))
-        sel[out_col] = raw[src] if src is not None else pd.NA
-    for c in DATE_COLS:
-        sel[c] = sel[c].apply(_fmt_date_text)
-    for c in NUMERIC_TEXT_COLS:
-        sel[c] = sel[c].apply(_clean_numeric_text)
-    return sel
-
-def _apply_bc_cases(sel):
-    key = sel["Buyers Catalog or Stock Keeping #"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
-    sel["BC Item#"] = key.map(lambda k: MAP_BC.get(k, (None, None))[0])
-    sel["BC Item Name"] = key.map(lambda k: MAP_BC.get(k, (None, None))[1])
-    case_sz = key.map(CASE_SIZE)
-    qty = pd.to_numeric(sel["Qty Ordered"], errors="coerce")
-    full_cases = pd.Series(pd.NA, index=sel.index, dtype="Int64")
-    leftover = pd.Series(pd.NA, index=sel.index, dtype="Int64")
-    mask = case_sz.notna() & qty.notna() & (case_sz.astype(float) > 0)
-    full_cases[mask] = (qty[mask] // case_sz[mask].astype(int)).astype("Int64")
-    leftover[mask] = (qty[mask] % case_sz[mask].astype(int)).astype("Int64")
-    sel["Full Cases"] = full_cases
-    sel["Qty Leftover"] = leftover
-    return sel
-
-def _agg_join(series):
-    vals = [str(v) for v in series if pd.notna(v) and str(v).strip() != ""]
-    if not vals: return pd.NA
-    uniq, seen = [], set()
-    for v in vals:
-        if v not in seen:
-            uniq.append(v); seen.add(v)
-    return uniq[0] if len(uniq) == 1 else " | ".join(uniq)
-
-def _consolidate(sel):
-    po_agg = sel.groupby("PO Number", dropna=False).agg(_agg_join)
-    line_valid = sel[sel["PO Line #"].notna() & (sel["PO Line #"].astype(str).str.strip()!="")]
-    line_agg = line_valid.groupby(["PO Number","PO Line #"], dropna=False).agg(_agg_join).reset_index()
-    for c in OUTPUT_COLUMNS:
-        if c in ["PO Number","PO Line #","Full Cases","Qty Leftover"]:
-            continue
-        mask = line_agg[c].isna() | (line_agg[c].astype(str).str.strip()=="")
-        line_agg.loc[mask, c] = line_agg.loc[mask, "PO Number"].map(po_agg[c])
-    return line_agg[OUTPUT_COLUMNS]
-
-if uploaded_file:
-    try:
-        raw = pd.read_csv(uploaded_file, dtype=str, keep_default_na=False)
-    except Exception as e:
-        st.error(f"Could not read CSV: {e}")
-        st.stop()
-
-    raw.columns = [c.strip() for c in raw.columns]
-    raw = raw.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
-
-    sel = _schema_select(raw)
-    sel = _apply_bc_cases(sel)
-    out_df = _consolidate(sel)
-
-    tz = pytz.timezone("America/New_York")
-    ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
-    fname = f"Walmart_Export_{ts}.csv"
-    st.download_button("Download Walmart Export (CSV)", data=out_df.to_csv(index=False).encode("utf-8-sig"),
-                       file_name=fname, mime="text/csv")
