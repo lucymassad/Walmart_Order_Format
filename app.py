@@ -43,22 +43,11 @@ MAP_BC = {
     "565378806": ("B1260070","SUNN PALM 6-1-8 4/10#"),
 }
 
-# Amount in case map (by Buyers Catalog or Stock Keeping #)
 CASE_SIZE = {
-    "665069485": 41,
-    "665113710": 41,
-    "666192291": 51,
-    "665069486": 51,
-    "665029761": 75,
-    "665031601": 75,
-    "665029760": 75,
-    "665031679": 75,
-    "665031685": 48,
-    "665029764": 48,
-    "665031697": 75,
-    "665029763": 75,
-    "665031676": 48,
-    "665029762": 48,
+    "665069485": 41, "665113710": 41, "666192291": 51, "665069486": 51,
+    "665029761": 75, "665031601": 75, "665029760": 75, "665031679": 75,
+    "665031685": 48, "665029764": 48, "665031697": 75, "665029763": 75,
+    "665031676": 48, "665029762": 48,
 }
 
 OUTPUT_COLUMNS = [
@@ -142,7 +131,6 @@ if uploaded_file:
     if name.endswith(".xlsx") and not can_import("openpyxl"):
         st.error("XLSX reading requires openpyxl. Add it to requirements.txt or upload a CSV.")
         st.stop()
-
     try:
         if name.endswith(".csv"):
             df = pd.read_csv(uploaded_file, dtype=str)
@@ -151,119 +139,49 @@ if uploaded_file:
     except Exception as e:
         st.error(f"Could not read file: {e}")
         st.stop()
-
     df = coalesce_cols(df)
     df = apply_bc_mapping(df)
     df = to_datetime_cols(df, DATE_COLS)
-    df = to_numeric_cols(df, ["Qty Ordered"], is_int=True)  # ensure Qty Ordered is numeric before case math
+    df = to_numeric_cols(df, ["Qty Ordered"], is_int=True)
     df = compute_cases(df)
     df = to_numeric_cols(df, INT_COLS, is_int=True)
     df = to_numeric_cols(df, FLOAT_COLS, is_int=False)
     df = finalize_columns(df)
-
     tz = pytz.timezone("America/New_York")
     timestamp = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
     base = f"Walmart_Export_{timestamp}"
-
-    can_xlsxwriter = can_import("xlsxwriter")
-    can_openpyxl = can_import("openpyxl")
     output = BytesIO()
-
-    if can_xlsxwriter or can_openpyxl:
-        engine = "xlsxwriter" if can_xlsxwriter else "openpyxl"
-        try:
-            with pd.ExcelWriter(output, engine=engine) as writer:
-                df.to_excel(writer, index=False, sheet_name="Export")
-
-                if engine == "xlsxwriter":
-                    wb = writer.book
-                    ws = writer.sheets["Export"]
-                    fmt_text = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left"})
-                    fmt_header = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"bold":True,"align":"left"})
-                    fmt_date = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"mm/dd/yyyy"})
-                    fmt_int = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"0"})
-                    fmt_float = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"0.00"})
-
-                    for col_idx, c in enumerate(OUTPUT_COLUMNS):
-                        ws.set_column(col_idx, col_idx, 22, fmt_text)
-                        ws.write(0, col_idx, c, fmt_header)
-
-                    for c in DATE_COLS:
-                        if c in OUTPUT_COLUMNS:
-                            idx = OUTPUT_COLUMNS.index(c)
-                            ws.set_column(idx, idx, 16, fmt_date)
-
-                    for c in INT_COLS:
-                        if c in OUTPUT_COLUMNS:
-                            idx = OUTPUT_COLUMNS.index(c)
-                            ws.set_column(idx, idx, 14, fmt_int)
-
-                    for c in FLOAT_COLS:
-                        if c in OUTPUT_COLUMNS:
-                            idx = OUTPUT_COLUMNS.index(c)
-                            ws.set_column(idx, idx, 16, fmt_float)
-
-                else:
-                    from openpyxl.styles import Font, Alignment
-                    from openpyxl.utils import get_column_letter
-                    wb = writer.book
-                    ws = writer.sheets["Export"]
-
-                    font = Font(name="Aptos Narrow", size=11, bold=False)
-                    font_bold = Font(name="Aptos Narrow", size=11, bold=True)
-                    left = Alignment(horizontal="left")
-
-                    for j, col in enumerate(OUTPUT_COLUMNS, start=1):
-                        cell = ws.cell(row=1, column=j)
-                        cell.font = font_bold
-                        cell.alignment = left
-                        ws.column_dimensions[get_column_letter(j)].width = 22
-
-                    for r in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-                        for cell in r:
-                            cell.font = font
-                            cell.alignment = left
-
-                    for c in DATE_COLS:
-                        if c in OUTPUT_COLUMNS:
-                            j = OUTPUT_COLUMNS.index(c) + 1
-                            for i in range(2, ws.max_row + 1):
-                                ws.cell(row=i, column=j).number_format = "mm/dd/yyyy"
-
-                    for c in INT_COLS:
-                        if c in OUTPUT_COLUMNS:
-                            j = OUTPUT_COLUMNS.index(c) + 1
-                            for i in range(2, ws.max_row + 1):
-                                ws.cell(row=i, column=j).number_format = "0"
-
-                    for c in FLOAT_COLS:
-                        if c in OUTPUT_COLUMNS:
-                            j = OUTPUT_COLUMNS.index(c) + 1
-                            for i in range(2, ws.max_row + 1):
-                                ws.cell(row=i, column=j).number_format = "0.00"
-
-            st.success("File processed successfully.")
-            st.download_button(
-                "Download Walmart Export (Excel)",
-                data=output.getvalue(),
-                file_name=base + ".xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as e:
-            csv_bytes = df.to_csv(index=False).encode("utf-8-sig")
-            st.warning(f"Excel writer unavailable ({e}). Providing CSV instead.")
-            st.download_button(
-                "Download Walmart Export (CSV)",
-                data=csv_bytes,
-                file_name=base + ".csv",
-                mime="text/csv",
-            )
-    else:
-        csv_bytes = df.to_csv(index=False).encode("utf-8-sig")
-        st.info("Excel engines not installed. Providing CSV download.")
-        st.download_button(
-            "Download Walmart Export (CSV)",
-            data=csv_bytes,
-            file_name=base + ".csv",
-            mime="text/csv",
-        )
+    if not can_import("xlsxwriter"):
+        st.error("XlsxWriter not installed. Add it to requirements.txt")
+        st.stop()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Export")
+        wb = writer.book
+        ws = writer.sheets["Export"]
+        fmt_text = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left"})
+        fmt_header = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"bold":True,"align":"left"})
+        fmt_date = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"mm/dd/yyyy"})
+        fmt_int = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"0"})
+        fmt_float = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"0.00"})
+        for col_idx, c in enumerate(OUTPUT_COLUMNS):
+            ws.set_column(col_idx, col_idx, 22, fmt_text)
+            ws.write(0, col_idx, c, fmt_header)
+        for c in DATE_COLS:
+            if c in OUTPUT_COLUMNS:
+                idx = OUTPUT_COLUMNS.index(c)
+                ws.set_column(idx, idx, 16, fmt_date)
+        for c in INT_COLS:
+            if c in OUTPUT_COLUMNS:
+                idx = OUTPUT_COLUMNS.index(c)
+                ws.set_column(idx, idx, 14, fmt_int)
+        for c in FLOAT_COLS:
+            if c in OUTPUT_COLUMNS:
+                idx = OUTPUT_COLUMNS.index(c)
+                ws.set_column(idx, idx, 16, fmt_float)
+    st.success("File processed successfully.")
+    st.download_button(
+        "Download Walmart Export (Excel)",
+        data=output.getvalue(),
+        file_name=base + ".xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
