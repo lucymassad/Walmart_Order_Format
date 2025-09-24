@@ -139,7 +139,6 @@ def _schema_select(raw):
             continue
         src = _find_col(raw, name_map.get(out_col, [out_col]))
         sel[out_col] = raw[src] if src is not None else pd.NA
-    # types
     for c in DATE_COLS:
         sel[c] = sel[c].apply(_fmt_date_text)
     for c in NUMERIC_TEXT_COLS:
@@ -162,18 +161,18 @@ def _apply_bc_cases(sel):
     return sel
 
 def _agg_join(series):
-    vals = [v for v in series if pd.notna(v) and str(v).strip()!=""]
+    vals = [str(v) for v in series if pd.notna(v) and str(v).strip() != ""]
     if not vals: return pd.NA
     uniq, seen = [], set()
     for v in vals:
         if v not in seen:
             uniq.append(v); seen.add(v)
-    return uniq[0] if len(uniq)==1 else " | ".join(uniq)
+    return uniq[0] if len(uniq) == 1 else " | ".join(uniq)
 
 def _consolidate(sel):
-    po_agg = sel.groupby("PO Number", dropna=True).agg(_agg_join)
+    po_agg = sel.groupby("PO Number", dropna=False).agg(_agg_join)
     line_valid = sel[sel["PO Line #"].notna() & (sel["PO Line #"].astype(str).str.strip()!="")]
-    line_agg = line_valid.groupby(["PO Number","PO Line #"], dropna=True).agg(_agg_join).reset_index()
+    line_agg = line_valid.groupby(["PO Number","PO Line #"], dropna=False).agg(_agg_join).reset_index()
     for c in OUTPUT_COLUMNS:
         if c in ["PO Number","PO Line #","Full Cases","Qty Leftover"]:
             continue
