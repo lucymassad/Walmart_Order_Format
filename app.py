@@ -123,3 +123,74 @@ def _schema_select(raw):
     sel = pd.DataFrame(index=raw.index)
     for out_col in OUTPUT_COLUMNS + ["Record Type"]:
         if out_col in ["BC Item#","BC Item Name","Full Cases","Qty Leftover"]:
+            sel[out_col] = pd.NA
+        else:
+            src = _find_col(raw, name_map.get(out_col, [out_col]))
+            sel[out_col] = raw[src] if src is not None else pd.NA
+    for c in DATE_COLS:
+        sel[c] = sel[c].apply(_fmt_date_text)
+    for c in NUMERIC_TEXT_COLS:
+        sel[c] = sel[c].apply(_clean_numeric_text)
+    return sel
+
+def _apply_bc_cases(sel):
+    key = sel["Buyers Catalog or Stock Keeping #"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    sel["BC Item#"] = key.map(lambda k: MAP_BC.get(k, (None, None))[0])
+    sel["BC Item Name"] = key.map(lambda k: MAP_BC.get(k, (None, None))[1])
+    case_sz = key.map(CASE_SIZE)
+    qty = pd.to_numeric(sel["Qty Ordered"], errors="coerce")
+    full_cases = pd.Series(pd.NA, index=sel.index, dtype="Int64")
+    leftover = pd.Series(pd.NA, index=sel.index, dtype="Int64")
+    mask = case_sz.notna() & qty.notna() & (case_sz.astype(float) > 0)
+    full_cases[mask] = (qty[mask] // case_sz[mask].astype(int)).astype("Int64")
+    leftover[mask] = (qty[mask] % case_sz[mask].astype(int)).astype("Int64")
+    sel["Full Cases"] = full_cases
+    sel["Qty Leftover"] = leftover
+    return sel
+
+def _agg_join(series):
+    vals = [str(v) for v in series if pd.notna(v) and str(v).strip() != ""]
+    if not vals: return pd.NA
+    uniq, seen = [], set()
+    for v in vals:
+        if v not in seen:
+            uniq.append(v); seen.add(v)
+    return uniq[0] if len(uniq) == 1 else " | ".join(uniq)
+
+def _consolidate(sel):
+    po_agg = sel.groupby("PO Number", dropna=False).agg(_agg_join)
+    line_valid = sel[sel["PO Line #"].notna() & (sel["PO Line #"].astype(str).str.strip()!="")]
+    line_agg = line_valid.groupby(["PO Number","PO Line #"], dropna=False).agg(_agg_join).reset_index()
+    for c in OUTPUT_COLUMNS:
+        if c in ["PO Number","PO Line #","Full Cases","Qty Leftover"]:
+            continue
+        mask = line_agg[c].isna() | (line_agg[c].astype(str).str.strip()=="")
+        line_agg.loc[mask, c] = line_agg.loc[mask, "PO Number"].map(po_agg[c])
+    for col in OUTPUT_COLUMNS:
+        if col not in line_agg.columns:
+            line_agg[col] = pd.NA
+    return line_agg[OUTPUT_COLUMNS]
+
+if uploaded_file:
+    try:
+        raw = pd.read_csv(uploaded_file, dtype=str, keep_default_na=False)
+    except Exception as e:
+        st.error(f"Could not read CSV: {e}")
+        st.stop()
+
+    raw.columns = [c.strip() for c in raw.columns]
+    raw = raw.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+
+    sel = _schema_select(raw)
+    sel = _apply_bc_cases(sel)
+    out_df = _consolidate(sel)
+
+    tz = pytz.timezone("America/New_York")
+    ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
+    fname = f"Walmart_Export_{ts}.csv"
+    st.download_button(
+        "Download Walmart Export (CSV)",
+        data=out_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name=fname,
+        mime="text/csv",
+    )
