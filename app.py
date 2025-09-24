@@ -16,14 +16,16 @@ OUTPUT_COLUMNS = [
     "Buyers Catalog or Stock Keeping #","UPC/EAN","Vendor Style","Number of Inner Packs",
     "Vendor #","Promo #","Ticket Description","Other Info / #s","Frt Terms","Payment Terms %",
     "Payment Terms Disc Days Due","Payment Terms Net Days","Allow/Charge Type","Allow/Charge Service",
-    "Allow/Charge Amt","Allow/Charge %","Buying Party Name","Buying Party Location",
-    "Buying Party Address 1","Buying Party Address 2","Buying Party City","Buying Party State",
-    "Buying Party Zip","Buying Party Country","Notes/Comments","GTIN","PO Total Amount",
-    "Must Arrive By","EDITxnType"
+    "Buying Party Name","Buying Party Location","Buying Party Address 1","Buying Party Address 2",
+    "Buying Party City","Buying Party State","Buying Party Zip","Buying Party Country",
+    "Notes/Comments","GTIN","PO Total Amount","Must Arrive By","EDITxnType"
 ]
 
 DATE_COLS = ["PO Date","Ship Dates","Cancel Date","Must Arrive By"]
-NUMERIC_COLS = ["Qty Ordered","Unit Price","Number of Inner Packs","Payment Terms %","Payment Terms Disc Days Due","Payment Terms Net Days","Allow/Charge Amt","Allow/Charge %","PO Total Amount","GTIN","UPC/EAN","PO Line #"]
+NUMERIC_TEXT_COLS = [
+    "Qty Ordered","Unit Price","Number of Inner Packs","Payment Terms %",
+    "Payment Terms Disc Days Due","Payment Terms Net Days","PO Total Amount","GTIN","UPC/EAN","PO Line #"
+]
 
 MAP_BC = {
     "665069485": ("B8100217","(BURPEE), (ECO FRIEND), SEED STARTING MIX, 0.06-0.03-0.03, 12 QT"),
@@ -77,85 +79,73 @@ def _find_col(df, candidates):
             return c
     return None
 
-def _clean_numeric(s):
-    if pd.isna(s): return np.nan
-    t = str(s).replace(",", "").replace("$", "").strip()
-    return t if re.search(r"\d", t) else np.nan
+def _clean_numeric_text(s):
+    if pd.isna(s): return pd.NA
+    t = str(s).strip()
+    t = t.replace(",", "").replace("$", "")
+    return t if re.search(r"\d", t) else pd.NA
 
-def _parse_date_text(s):
+def _fmt_date_text(s):
     if pd.isna(s) or str(s).strip()=="":
-        return np.nan
+        return pd.NA
     x = pd.to_datetime(s, errors="coerce")
-    if pd.isna(x):
-        return np.nan
-    return x.strftime("%m/%d/%Y")
+    return x.strftime("%m/%d/%Y") if pd.notna(x) else pd.NA
 
-def _select_schema(df):
-    out = pd.DataFrame(index=df.index)
+def _schema_select(raw):
     name_map = {
         "PO Number": ["PO Number","PO #","PONumber","PO"],
         "PO Date": ["PO Date","Order Date","PODate"],
         "Retailers PO": ["Retailers PO","Retailer PO","RetailersPO"],
-        "Ship Dates": ["Ship Dates","Ship Date"],
+        "Ship Dates": ["Ship Dates","Ship Date","ShipDate"],
         "Cancel Date": ["Cancel Date","CancelDate"],
         "PO Line #": ["PO Line #","PO Line","Line #","Line Number"],
         "Qty Ordered": ["Qty Ordered","Quantity Ordered","Qty"],
-        "Unit of Measure": ["Unit of Measure","UOM"],
-        "Unit Price": ["Unit Price","Price","UnitPrice"],
-        "Buyers Catalog or Stock Keeping #": ["Buyers Catalog or Stock Keeping #","Buyers Catalog #","SKU","Catalog #"],
-        "UPC/EAN": ["UPC/EAN","UPC","EAN"],
+        "Unit of Measure": ["Unit of Measure","UOM","Unit"],
+        "Unit Price": ["Unit Price","Price","UnitPrice","Cost"],
+        "Buyers Catalog or Stock Keeping #": ["Buyers Catalog or Stock Keeping #","Buyers Catalog #","SKU","Catalog #","Buyer SKU"],
+        "UPC/EAN": ["UPC/EAN","UPC","EAN","UPC Code"],
         "Vendor Style": ["Vendor Style","Style"],
-        "Number of Inner Packs": ["Number of Inner Packs","Inner Packs","Inner Pack Count"],
-        "Vendor #": ["Vendor #","Vendor Number","Vendor ID"],
-        "Promo #": ["Promo #","Promo Number","Promotion #"],
-        "Ticket Description": ["Ticket Description","Ticket Desc","Description"],
-        "Other Info / #s": ["Other Info / #s","Other Info","Other Numbers"],
-        "Frt Terms": ["Frt Terms","Freight Terms"],
-        "Payment Terms %": ["Payment Terms %","Payment Terms Percent"],
-        "Payment Terms Disc Days Due": ["Payment Terms Disc Days Due","Disc Days Due"],
-        "Payment Terms Net Days": ["Payment Terms Net Days","Net Days"],
+        "Number of Inner Packs": ["Number of Inner Packs","Inner Packs","Inner Pack Count","InnerPack"],
+        "Vendor #": ["Vendor #","Vendor Number","Vendor ID","VendorID"],
+        "Promo #": ["Promo #","Promo Number","Promotion #","Promo"],
+        "Ticket Description": ["Ticket Description","Ticket Desc","Description","Item Description"],
+        "Other Info / #s": ["Other Info / #s","Other Info","Other Numbers","Other #s"],
+        "Frt Terms": ["Frt Terms","Freight Terms","Freight"],
+        "Payment Terms %": ["Payment Terms %","Payment Terms Percent","Terms %"],
+        "Payment Terms Disc Days Due": ["Payment Terms Disc Days Due","Disc Days Due","Discount Days"],
+        "Payment Terms Net Days": ["Payment Terms Net Days","Net Days","Terms Net"],
         "Allow/Charge Type": ["Allow/Charge Type","Allowance Type","Charge Type"],
         "Allow/Charge Service": ["Allow/Charge Service","Allowance Service","Charge Service"],
-        "Allow/Charge Amt": ["Allow/Charge Amt","Allowance Amount","Charge Amount","Amount"],
-        "Allow/Charge %": ["Allow/Charge %","Allowance %","Charge %","Percent"],
-        "Buying Party Name": ["Buying Party Name","Buyer Name"],
-        "Buying Party Location": ["Buying Party Location","Buyer Location"],
-        "Buying Party Address 1": ["Buying Party Address 1","Address 1"],
-        "Buying Party Address 2": ["Buying Party Address 2","Address 2"],
-        "Buying Party City": ["Buying Party City","City"],
-        "Buying Party State": ["Buying Party State","State"],
-        "Buying Party Zip": ["Buying Party Zip","Zip","Postal Code"],
+        "Buying Party Name": ["Buying Party Name","Buyer Name","Ship To Name","ST Name"],
+        "Buying Party Location": ["Buying Party Location","Buyer Location","Location #","Location"],
+        "Buying Party Address 1": ["Buying Party Address 1","Address 1","Addr1","Address1"],
+        "Buying Party Address 2": ["Buying Party Address 2","Address 2","Addr2","Address2"],
+        "Buying Party City": ["Buying Party City","City","Town"],
+        "Buying Party State": ["Buying Party State","State","Province"],
+        "Buying Party Zip": ["Buying Party Zip","Zip","Postal Code","ZIP Code"],
         "Buying Party Country": ["Buying Party Country","Country"],
-        "Notes/Comments": ["Notes/Comments","Notes","Comments"],
-        "GTIN": ["GTIN"],
-        "PO Total Amount": ["PO Total Amount","Total Amount","PO Amount"],
-        "Must Arrive By": ["Must Arrive By","MABD","MustArriveBy"],
+        "Notes/Comments": ["Notes/Comments","Notes","Comments","Comment"],
+        "GTIN": ["GTIN","GTIN-14"],
+        "PO Total Amount": ["PO Total Amount","Total Amount","PO Amount","Order Total"],
+        "Must Arrive By": ["Must Arrive By","MABD","MustArriveBy","Must Arrive Date"],
         "EDITxnType": ["EDITxnType","EDI Txn Type","Transaction Type"],
         "Record Type": ["Record Type","RecordType","Type"]
     }
+    sel = pd.DataFrame(index=raw.index)
     for out_col in OUTPUT_COLUMNS + ["Record Type"]:
         if out_col in ["BC Item#","BC Item Name","Full Cases","Qty Leftover"]:
-            out[out_col] = pd.NA
+            sel[out_col] = pd.NA
             continue
-        src = _find_col(df, name_map.get(out_col, [out_col]))
-        if src is not None:
-            out[out_col] = df[src]
-        else:
-            out[out_col] = pd.NA
-    return out
+        src = _find_col(raw, name_map.get(out_col, [out_col]))
+        sel[out_col] = raw[src] if src is not None else pd.NA
+    return sel
 
-def _apply_bc_and_cases(sel):
-    keycol = "Buyers Catalog or Stock Keeping #"
-    if keycol in sel.columns:
-        key = sel[keycol].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
-        sel["BC Item#"] = key.map(lambda k: MAP_BC.get(k, (None, None))[0])
-        sel["BC Item Name"] = key.map(lambda k: MAP_BC.get(k, (None, None))[1])
-        case_sz = key.map(CASE_SIZE)
-    else:
-        sel["BC Item#"] = pd.NA
-        sel["BC Item Name"] = pd.NA
-        case_sz = pd.Series(pd.NA, index=sel.index)
-    qty = pd.to_numeric(sel["Qty Ordered"].apply(_clean_numeric), errors="coerce")
+def _apply_bc_cases(sel):
+    key = sel["Buyers Catalog or Stock Keeping #"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    sel["BC Item#"] = key.map(lambda k: MAP_BC.get(k, (None, None))[0])
+    sel["BC Item Name"] = key.map(lambda k: MAP_BC.get(k, (None, None))[1])
+    case_sz = key.map(CASE_SIZE)
+    qty = pd.to_numeric(sel["Qty Ordered"].apply(_clean_numeric_text), errors="coerce")
     full_cases = pd.Series(pd.NA, index=sel.index, dtype="Int64")
     leftover = pd.Series(pd.NA, index=sel.index, dtype="Int64")
     mask = case_sz.notna() & qty.notna() & (case_sz.astype(float) > 0)
@@ -167,34 +157,24 @@ def _apply_bc_and_cases(sel):
 
 def _normalize_types(sel):
     for c in DATE_COLS:
-        if c in sel.columns:
-            sel[c] = sel[c].apply(_parse_date_text)
-    for c in NUMERIC_COLS:
-        if c in sel.columns:
-            sel[c] = sel[c].apply(_clean_numeric)
+        sel[c] = sel[c].apply(_fmt_date_text)
+    for c in NUMERIC_TEXT_COLS:
+        sel[c] = sel[c].apply(_clean_numeric_text)
     return sel
 
 def _consolidate(sel):
-    rt_col = "Record Type" if "Record Type" in sel.columns else None
     prio = {"H":0,"O":1,"D":2,"C":3,"T":4,"S":5,"A":6,"F":7}
-    if rt_col is None:
-        sel["__prio"] = 99
-    else:
-        sel["__prio"] = sel[rt_col].map(lambda x: prio.get(str(x).strip().upper(), 99) if pd.notna(x) else 99)
-    po_col = "PO Number" if "PO Number" in sel.columns else None
-    line_col = "PO Line #" if "PO Line #" in sel.columns else None
-    if po_col is None:
-        gcols = []
-    else:
-        gcols = [po_col] + ([line_col] if line_col else [])
+    rt = sel["Record Type"] if "Record Type" in sel.columns else pd.Series(pd.NA, index=sel.index)
+    sel["__prio"] = rt.map(lambda x: prio.get(str(x).strip().upper(), 99) if pd.notna(x) else 99)
+    po = "PO Number"
+    line = "PO Line #"
+    gcols = [c for c in [po, line] if c in sel.columns]
     if not gcols:
-        g = [sel]
-        keys = [None]
+        groups = [sel]
     else:
-        g = [sub for _, sub in sel.groupby(gcols, dropna=False)]
-        keys = [k for k, _ in sel.groupby(gcols, dropna=False)]
+        groups = [sub for _, sub in sel.groupby(gcols, dropna=False)]
     rows = []
-    for i, grp in enumerate(g):
+    for grp in groups:
         grp = grp.sort_values("__prio", kind="stable")
         out = {}
         for c in OUTPUT_COLUMNS:
@@ -218,14 +198,17 @@ if uploaded_file:
     except Exception as e:
         st.error(f"Could not read CSV: {e}")
         st.stop()
+
     raw.columns = [c.strip() for c in raw.columns]
     for c in raw.columns:
         s = raw[c].astype(str).str.strip()
-        raw[c] = s.replace({"": np.nan, "nan": np.nan, "None": np.nan})
-    sel = _select_schema(raw)
-    sel = _apply_bc_and_cases(sel)
+        raw[c] = s.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+
+    sel = _schema_select(raw)
+    sel = _apply_bc_cases(sel)
     sel = _normalize_types(sel)
     out_df = _consolidate(sel)
+
     tz = pytz.timezone("America/New_York")
     ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
     fname = f"Walmart_Export_{ts}.csv"
