@@ -151,34 +151,12 @@ if uploaded_file:
     timestamp = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
     base = f"Walmart_Export_{timestamp}"
     output = BytesIO()
-    if not can_import("xlsxwriter"):
-        st.error("XlsxWriter not installed. Add it to requirements.txt")
+    engine = "xlsxwriter" if can_import("xlsxwriter") else ("openpyxl" if can_import("openpyxl") else None)
+    if engine is None:
+        st.error("No Excel engine found. Add 'xlsxwriter' or 'openpyxl' to requirements.txt")
         st.stop()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine=engine) as writer:
         df.to_excel(writer, index=False, sheet_name="Export")
-        wb = writer.book
-        ws = writer.sheets["Export"]
-        fmt_text = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left"})
-        fmt_header = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"bold":True,"align":"left"})
-        fmt_date = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"mm/dd/yyyy"})
-        fmt_int = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"0"})
-        fmt_float = wb.add_format({"font_name":"Aptos Narrow","font_size":11,"align":"left","num_format":"0.00"})
-        for col_idx, c in enumerate(OUTPUT_COLUMNS):
-            ws.set_column(col_idx, col_idx, 22, fmt_text)
-            ws.write(0, col_idx, c, fmt_header)
-        for c in DATE_COLS:
-            if c in OUTPUT_COLUMNS:
-                idx = OUTPUT_COLUMNS.index(c)
-                ws.set_column(idx, idx, 16, fmt_date)
-        for c in INT_COLS:
-            if c in OUTPUT_COLUMNS:
-                idx = OUTPUT_COLUMNS.index(c)
-                ws.set_column(idx, idx, 14, fmt_int)
-        for c in FLOAT_COLS:
-            if c in OUTPUT_COLUMNS:
-                idx = OUTPUT_COLUMNS.index(c)
-                ws.set_column(idx, idx, 16, fmt_float)
-    st.success("File processed successfully.")
     st.download_button(
         "Download Walmart Export (Excel)",
         data=output.getvalue(),
