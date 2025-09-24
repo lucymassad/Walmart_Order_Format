@@ -43,9 +43,27 @@ MAP_BC = {
     "565378806": ("B1260070","SUNN PALM 6-1-8 4/10#"),
 }
 
+# Amount in case map (by Buyers Catalog or Stock Keeping #)
+CASE_SIZE = {
+    "665069485": 41,
+    "665113710": 41,
+    "666192291": 51,
+    "665069486": 51,
+    "665029761": 75,
+    "665031601": 75,
+    "665029760": 75,
+    "665031679": 75,
+    "665031685": 48,
+    "665029764": 48,
+    "665031697": 75,
+    "665029763": 75,
+    "665031676": 48,
+    "665029762": 48,
+}
+
 OUTPUT_COLUMNS = [
     "PO Number","PO Date","Retailers PO","Ship Dates","Cancel Date","PO Line #",
-    "BC Item#","BC Item Name","Qty Ordered","Unit of Measure","Unit Price",
+    "BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover","Unit of Measure","Unit Price",
     "Buyers Catalog or Stock Keeping #","UPC/EAN","Vendor Style","Number of Inner Packs",
     "Vendor #","Promo #","Ticket Description","Other Info / #s","Frt Terms","Payment Terms %",
     "Payment Terms Disc Days Due","Payment Terms Net Days","Allow/Charge Type","Allow/Charge Service",
@@ -56,7 +74,8 @@ OUTPUT_COLUMNS = [
 ]
 
 DATE_COLS = ["PO Date","Ship Dates","Cancel Date","Must Arrive By"]
-INT_COLS = ["Qty Ordered","Number of Inner Packs","PO Line #","Payment Terms Disc Days Due","Payment Terms Net Days"]
+INT_COLS = ["Qty Ordered","Number of Inner Packs","PO Line #","Payment Terms Disc Days Due","Payment Terms Net Days",
+            "Full Cases","Qty Leftover"]
 FLOAT_COLS = ["Unit Price","Allow/Charge Amt","Allow/Charge %","Payment Terms %","PO Total Amount"]
 
 def can_import(mod: str) -> bool:
@@ -94,6 +113,24 @@ def to_numeric_cols(df: pd.DataFrame, cols, is_int=False) -> pd.DataFrame:
                 df[c] = df[c].dropna().astype("Int64").reindex(df.index)
     return df
 
+def compute_cases(df: pd.DataFrame) -> pd.DataFrame:
+    keycol = "Buyers Catalog or Stock Keeping #"
+    if keycol in df.columns and "Qty Ordered" in df.columns:
+        key = df[keycol].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+        case_sz = key.map(CASE_SIZE).astype("Float64")
+        qty = pd.to_numeric(df["Qty Ordered"], errors="coerce")
+        full_cases = pd.Series(pd.NA, index=df.index, dtype="Int64")
+        leftover = pd.Series(pd.NA, index=df.index, dtype="Int64")
+        mask = case_sz.notna() & qty.notna() & (case_sz > 0)
+        full_cases[mask] = (qty[mask] // case_sz[mask]).astype("Int64")
+        leftover[mask] = (qty[mask] % case_sz[mask]).astype("Int64")
+        df["Full Cases"] = full_cases
+        df["Qty Leftover"] = leftover
+    else:
+        df["Full Cases"] = pd.NA
+        df["Qty Leftover"] = pd.NA
+    return df
+
 def finalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     for c in OUTPUT_COLUMNS:
         if c not in df.columns:
@@ -117,9 +154,11 @@ if uploaded_file:
 
     df = coalesce_cols(df)
     df = apply_bc_mapping(df)
-    df = to_datetime_cols(df, DATE_COLS)              # Excel-recognizable dates (esp. PO Date)
-    df = to_numeric_cols(df, INT_COLS, is_int=True)   # integers
-    df = to_numeric_cols(df, FLOAT_COLS, is_int=False)# numeric amounts/percents as numbers
+    df = to_datetime_cols(df, DATE_COLS)
+    df = to_numeric_cols(df, ["Qty Ordered"], is_int=True)  # ensure Qty Ordered is numeric before case math
+    df = compute_cases(df)
+    df = to_numeric_cols(df, INT_COLS, is_int=True)
+    df = to_numeric_cols(df, FLOAT_COLS, is_int=False)
     df = finalize_columns(df)
 
     tz = pytz.timezone("America/New_York")
@@ -165,7 +204,7 @@ if uploaded_file:
                             ws.set_column(idx, idx, 16, fmt_float)
 
                 else:
-                    from openpyxl.styles import Font, Alignment, NamedStyle
+                    from openpyxl.styles import Font, Alignment
                     from openpyxl.utils import get_column_letter
                     wb = writer.book
                     ws = writer.sheets["Export"]
