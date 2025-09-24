@@ -11,18 +11,19 @@ st.markdown("Upload Walmart CSV file.")
 uploaded_file = st.file_uploader("Upload Walmart File (.csv only)", type=["csv"])
 
 OUTPUT_COLUMNS = [
-    "PO Line #","Vendor Style","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover",
-    "Unit of Measure","Unit Price","Buyers Catalog or Stock Keeping #","UPC/EAN","Number of Inner Packs",
-    "Vendor #","Promo #","Ticket Description","Other Info / #s",
+    "PO Number","PO Date","Must Arrive By","PO Line #","Vendor Style",
+    "BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover",
+    "Unit of Measure","Unit Price","Number of Inner Packs","PO Total Amount",
+    "Promo #","Ticket Description","Other Info / #s","Frt Terms",
     "Buying Party Name","Buying Party Location","Buying Party Address 1","Buying Party Address 2",
-    "Buying Party City","Buying Party State","Buying Party Zip",
-    "Notes/Comments","GTIN","PO Total Amount","Must Arrive By","EDITxnType",
-    "PO Number","PO Date"
+    "Buying Party City","Buying Party State","Buying Party Zip","Notes/Comments",
+    "Allow/Charge Service","GTIN","Buyers Catalog or Stock Keeping #","UPC/EAN","EDITxnType"
 ]
 
 DATE_COLS = ["PO Date","Must Arrive By"]
 NUMERIC_TEXT_COLS = [
-    "Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount","GTIN","UPC/EAN","PO Line #"
+    "Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount",
+    "GTIN","UPC/EAN","PO Line #"
 ]
 
 MAP_BC = {
@@ -91,9 +92,11 @@ def _fmt_date_text(s):
     return x.strftime("%m/%d/%Y") if pd.notna(x) else pd.NA
 
 def _schema_select(raw):
+    # Map raw headers into our schema
     name_map = {
         "PO Number": ["PO Number","PO #","PONumber","PO"],
         "PO Date": ["PO Date","Order Date","PODate"],
+        "Must Arrive By": ["Must Arrive By","MABD","MustArriveBy","Must Arrive Date"],
         "PO Line #": ["PO Line #","PO Line","Line #","Line Number"],
         "Vendor Style": ["Vendor Style","Style"],
         "Qty Ordered": ["Qty Ordered","Quantity Ordered","Qty"],
@@ -106,6 +109,7 @@ def _schema_select(raw):
         "Promo #": ["Promo #","Promo Number","Promotion #","Promo"],
         "Ticket Description": ["Ticket Description","Ticket Desc","Description","Item Description"],
         "Other Info / #s": ["Other Info / #s","Other Info","Other Numbers","Other #s"],
+        "Frt Terms": ["Frt Terms","Freight Terms","Freight"],
         "Buying Party Name": ["Buying Party Name","Buyer Name","Ship To Name","ST Name"],
         "Buying Party Location": ["Buying Party Location","Buyer Location","Location #","Location"],
         "Buying Party Address 1": ["Buying Party Address 1","Address 1","Addr1","Address1"],
@@ -116,7 +120,7 @@ def _schema_select(raw):
         "Notes/Comments": ["Notes/Comments","Notes","Comments","Comment"],
         "GTIN": ["GTIN","GTIN-14"],
         "PO Total Amount": ["PO Total Amount","Total Amount","PO Amount","Order Total"],
-        "Must Arrive By": ["Must Arrive By","MABD","MustArriveBy","Must Arrive Date"],
+        "Allow/Charge Service": ["Allow/Charge Service","Allowance Service","Charge Service"],
         "EDITxnType": ["EDITxnType","EDI Txn Type","Transaction Type"],
         "Record Type": ["Record Type","RecordType","Type"]
     }
@@ -169,6 +173,9 @@ def _consolidate(sel):
     for col in OUTPUT_COLUMNS:
         if col not in line_agg.columns:
             line_agg[col] = pd.NA
+    # Sort by PO Date oldest→newest
+    line_agg["__sortdate"] = pd.to_datetime(line_agg["PO Date"], errors="coerce")
+    line_agg = line_agg.sort_values("__sortdate", ascending=True).drop(columns="__sortdate")
     return line_agg[OUTPUT_COLUMNS]
 
 if uploaded_file:
