@@ -294,18 +294,22 @@ if uploaded_file:
         st.error(f"Could not read CSV: {e}")
         st.stop()
 
-    raw.columns = [c.strip() for c in raw.columns]
-    raw = raw.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+    with st.spinner("Your File is Being Processed..."):
+        raw.columns = [c.strip() for c in raw.columns]
+        raw = raw.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
 
-    sel = _schema_select(raw)
-    sel = _apply_bc_and_cases(sel)
-    orders = _consolidate(sel)
+        sel = _schema_select(raw)
+        sel = _apply_bc_and_cases(sel)
+        orders = _consolidate(sel)
 
-    # Convert safe numeric columns to numbers for Excel (prevents green triangles)
-    numeric_cols = ["Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount","Full Cases","Qty Leftover"]
-    for c in numeric_cols:
-        if c in orders.columns:
-            orders[c] = pd.to_numeric(orders[c], errors="coerce")
+        numeric_cols = ["Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount","Full Cases","Qty Leftover"]
+        for c in numeric_cols:
+            if c in orders.columns:
+                orders[c] = pd.to_numeric(orders[c], errors="coerce")
+
+        trucks_df, missing_df = _truck_frames(orders)
+
+    st.success("Done")
 
     trucks_df, missing_df = _truck_frames(orders)
 
@@ -331,7 +335,7 @@ if uploaded_file:
         _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
 
     st.download_button(
-        "Download Walmart Export (Excel, 2 Sheets)",
+        "Download Walmart Export (1 File, 2 Sheets)",
         data=output.getvalue(),
         file_name=fname,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
