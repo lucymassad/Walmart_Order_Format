@@ -53,12 +53,27 @@ MAP_BC = {
     "565380343": ("B1260080","SUNN PALM 6-1-8 20 LB"),
     "565378806": ("B1260070","SUNN PALM 6-1-8 4/10#")
 }
+
 CASE_SIZE = {
     "665069485": 41, "665113710": 41, "666192291": 51, "665069486": 51,
     "665029761": 75, "665031601": 75, "665029760": 75, "665031679": 75,
     "665031685": 48, "665029764": 48, "665031697": 75, "665029763": 75,
     "665031676": 48, "665029762": 48
 }
+
+ORDERS_WIDTHS = {
+    "PO Number":16,"PO Date":16,"Ship Dates":16,"Must Arrive By":16,
+    "PO Line #":16,"Vendor Style":16,"BC Item#":16,"BC Item Name":60,
+    "Qty Ordered":14,"Full Cases":14,"Qty Leftover":14,"Unit of Measure":14,
+    "Unit Price":14,"Number of Inner Packs":20,"PO Total Amount":16,"Promo #":18,
+    "Ticket Description":16,"Other Info / #s":40,"Frt Terms":30,"Buying Party Name":40,
+    "Buying Party Location":30,"Buying Party Address 1":30,"Buying Party Address 2":25,
+    "Buying Party City":25,"Buying Party State":25,"Buying Party Zip":25,"Notes/Comments":175,
+    "Allow/Charge Service":52,"GTIN":16,"Buyers Catalog or Stock Keeping #":16,"UPC/EAN":16,"EDITxnType":16
+}
+
+TRUCKS_COLS = ["Truck","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]
+TRUCKS_WIDTHS = {"Truck":16,"BC Item#":16,"BC Item Name":60,"Qty Ordered":14,"Full Cases":14,"Qty Leftover":14}
 
 def _clean_numeric_text(s):
     if pd.isna(s): return pd.NA
@@ -77,36 +92,36 @@ def _fmt_date_text(s):
 
 def _schema_select(raw):
     name_map = {
-        "PO Number": ["PO Number","PO #","PONumber","PO"],
-        "PO Date": ["PO Date","Order Date","PODate"],
-        "Ship Dates": ["Ship Dates","Ship Date","Delivery Dates","Requested Delivery Date"],
-        "Must Arrive By": ["Must Arrive By","MABD","MustArriveBy","Must Arrive Date"],
-        "PO Line #": ["PO Line #","PO Line","Line #","Line Number"],
-        "Vendor Style": ["Vendor Style","Style"],
-        "Qty Ordered": ["Qty Ordered","Quantity Ordered","Qty"],
-        "Unit of Measure": ["Unit of Measure","UOM","Unit"],
-        "Unit Price": ["Unit Price","Price","UnitPrice","Cost"],
-        "Buyers Catalog or Stock Keeping #": ["Buyers Catalog or Stock Keeping #","Buyers Catalog #","SKU","Catalog #","Buyer SKU"],
-        "UPC/EAN": ["UPC/EAN","UPC","EAN","UPC Code"],
-        "Number of Inner Packs": ["Number of Inner Packs","Inner Packs","Inner Pack Count","InnerPack"],
-        "Vendor #": ["Vendor #","Vendor Number","Vendor ID","VendorID"],
-        "Promo #": ["Promo #","Promo Number","Promotion #","Promo"],
-        "Ticket Description": ["Ticket Description","Ticket Desc","Description","Item Description"],
-        "Other Info / #s": ["Other Info / #s","Other Info","Other Numbers","Other #s"],
-        "Frt Terms": ["Frt Terms","Freight Terms","Freight"],
-        "Buying Party Name": ["Buying Party Name","Buyer Name","Ship To Name","ST Name"],
-        "Buying Party Location": ["Buying Party Location","Buyer Location","Location #","Location"],
-        "Buying Party Address 1": ["Buying Party Address 1","Address 1","Addr1","Address1"],
-        "Buying Party Address 2": ["Buying Party Address 2","Address 2","Addr2","Address2"],
-        "Buying Party City": ["Buying Party City","City","Town"],
-        "Buying Party State": ["Buying Party State","State","Province"],
-        "Buying Party Zip": ["Buying Party Zip","Zip","Postal Code","ZIP Code"],
-        "Notes/Comments": ["Notes/Comments","Notes","Comments","Comment"],
-        "GTIN": ["GTIN","GTIN-14"],
-        "PO Total Amount": ["PO Total Amount","Total Amount","PO Amount","Order Total"],
-        "Allow/Charge Service": ["Allow/Charge Service","Allowance Service","Charge Service"],
-        "EDITxnType": ["EDITxnType","EDI Txn Type","Transaction Type"],
-        "Record Type": ["Record Type","RecordType","Type"]
+        "PO Number":["PO Number","PO #","PONumber","PO"],
+        "PO Date":["PO Date","Order Date","PODate"],
+        "Ship Dates":["Ship Dates","Ship Date","Delivery Dates","Requested Delivery Date"],
+        "Must Arrive By":["Must Arrive By","MABD","MustArriveBy","Must Arrive Date"],
+        "PO Line #":["PO Line #","PO Line","Line #","Line Number"],
+        "Vendor Style":["Vendor Style","Style"],
+        "Qty Ordered":["Qty Ordered","Quantity Ordered","Qty"],
+        "Unit of Measure":["Unit of Measure","UOM","Unit"],
+        "Unit Price":["Unit Price","Price","UnitPrice","Cost"],
+        "Buyers Catalog or Stock Keeping #":["Buyers Catalog or Stock Keeping #","Buyers Catalog #","SKU","Catalog #","Buyer SKU"],
+        "UPC/EAN":["UPC/EAN","UPC","EAN","UPC Code"],
+        "Number of Inner Packs":["Number of Inner Packs","Inner Packs","Inner Pack Count","InnerPack"],
+        "Vendor #":["Vendor #","Vendor Number","Vendor ID","VendorID"],
+        "Promo #":["Promo #","Promo Number","Promotion #","Promo"],
+        "Ticket Description":["Ticket Description","Ticket Desc","Description","Item Description"],
+        "Other Info / #s":["Other Info / #s","Other Info","Other Numbers","Other #s"],
+        "Frt Terms":["Frt Terms","Freight Terms","Freight"],
+        "Buying Party Name":["Buying Party Name","Buyer Name","Ship To Name","ST Name"],
+        "Buying Party Location":["Buying Party Location","Buyer Location","Location #","Location"],
+        "Buying Party Address 1":["Buying Party Address 1","Address 1","Addr1","Address1"],
+        "Buying Party Address 2":["Buying Party Address 2","Address 2","Addr2","Address2"],
+        "Buying Party City":["Buying Party City","City","Town"],
+        "Buying Party State":["Buying Party State","State","Province"],
+        "Buying Party Zip":["Buying Party Zip","Zip","Postal Code","ZIP Code"],
+        "Notes/Comments":["Notes/Comments","Notes","Comments","Comment"],
+        "GTIN":["GTIN","GTIN-14"],
+        "PO Total Amount":["PO Total Amount","Total Amount","PO Amount","Order Total"],
+        "Allow/Charge Service":["Allow/Charge Service","Allowance Service","Charge Service"],
+        "EDITxnType":["EDITxnType","EDI Txn Type","Transaction Type"],
+        "Record Type":["Record Type","RecordType","Type"]
     }
     norm = {re.sub(r"[^a-z0-9]+","", c.lower()): c for c in raw.columns}
     def find(cands):
@@ -174,8 +189,7 @@ def _truck_parse_id(notes):
     return m.group(1) if m else None
 
 def _truck_frames(orders):
-    rows_with = []
-    rows_missing = []
+    rows_with, rows_missing = [], []
     for _, r in orders.iterrows():
         t = _truck_parse_id(str(r.get("Notes/Comments") or ""))
         rec = {
@@ -183,8 +197,7 @@ def _truck_frames(orders):
             "Qty Ordered": pd.to_numeric(r["Qty Ordered"], errors="coerce") or 0
         }
         if t:
-            rec["Truck"] = t
-            rows_with.append(rec)
+            rec["Truck"] = t; rows_with.append(rec)
         else:
             rows_missing.append(rec)
 
@@ -204,7 +217,7 @@ def _truck_frames(orders):
         left[mask] = (qty[mask] % case_sz[mask].astype(int)).astype("Int64")
         trucks_df["Full Cases"] = full
         trucks_df["Qty Leftover"] = left
-        trucks_df = trucks_df[["Truck","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]]
+        trucks_df = trucks_df[TRUCKS_COLS]
         trucks_df = trucks_df.sort_values(["Truck","BC Item#"], kind="mergesort")
 
     if not missing_df.empty:
@@ -250,9 +263,8 @@ def _write_truck_sheet_xlsx(writer, trucks_df, missing_df):
                 ws.write(row, 3, int(r["Full Cases"]) if pd.notna(r["Full Cases"]) else "", fmt_left)
                 ws.write(row, 4, int(r["Qty Leftover"]) if pd.notna(r["Qty Leftover"]) else "", fmt_left)
                 row += 1
-            row += 1  # blank line between trucks
+            row += 1
 
-    # Missing truck section
     ws.write(row, 0, "Missing Truck Information", fmt_bold_left)
     row += 1
     headers = ["BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]
@@ -268,7 +280,12 @@ def _write_truck_sheet_xlsx(writer, trucks_df, missing_df):
             ws.write(row, 4, int(r["Qty Leftover"]) if pd.notna(r["Qty Leftover"]) else "", fmt_left)
             row += 1
 
-    ws.set_column(0, 4, 24, fmt_left)
+    ws.set_column(0, 0, TRUCKS_WIDTHS["Truck"], fmt_left)
+    ws.set_column(1, 1, TRUCKS_WIDTHS["BC Item#"], fmt_left)
+    ws.set_column(2, 2, TRUCKS_WIDTHS["BC Item Name"], fmt_left)
+    ws.set_column(3, 3, TRUCKS_WIDTHS["Qty Ordered"], fmt_left)
+    ws.set_column(4, 4, TRUCKS_WIDTHS["Full Cases"], fmt_left)
+    ws.set_column(5, 5, TRUCKS_WIDTHS["Qty Leftover"], fmt_left)
 
 if uploaded_file:
     try:
@@ -284,6 +301,12 @@ if uploaded_file:
     sel = _apply_bc_and_cases(sel)
     orders = _consolidate(sel)
 
+    # Convert safe numeric columns to numbers for Excel (prevents green triangles)
+    numeric_cols = ["Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount","Full Cases","Qty Leftover"]
+    for c in numeric_cols:
+        if c in orders.columns:
+            orders[c] = pd.to_numeric(orders[c], errors="coerce")
+
     trucks_df, missing_df = _truck_frames(orders)
 
     tz = pytz.timezone("America/New_York")
@@ -297,9 +320,14 @@ if uploaded_file:
         wb = writer.book
         fmt_left = wb.add_format({"align": "left"})
         ws_orders = writer.sheets["Orders"]
-        ws_orders.set_column(0, orders.shape[1]-1, 20, fmt_left)
+        ws_orders.set_row(0, None, fmt_left)  # header row left
+        # set widths per your map
+        col_index = {col: i for i, col in enumerate(orders.columns)}
+        for col_name, width in ORDERS_WIDTHS.items():
+            if col_name in col_index:
+                ws_orders.set_column(col_index[col_name], col_index[col_name], width, fmt_left)
 
-        # Trucks sheet with grouped layout
+        # Trucks sheet (grouped layout + widths)
         _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
 
     st.download_button(
