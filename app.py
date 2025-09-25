@@ -53,7 +53,6 @@ MAP_BC = {
     "565380343": ("B1260080","SUNN PALM 6-1-8 20 LB"),
     "565378806": ("B1260070","SUNN PALM 6-1-8 4/10#")
 }
-
 CASE_SIZE = {
     "665069485": 41, "665113710": 41, "666192291": 51, "665069486": 51,
     "665029761": 75, "665031601": 75, "665029760": 75, "665031679": 75,
@@ -169,35 +168,107 @@ def _consolidate(sel):
     line_agg = line_agg.sort_values("__sort").drop(columns="__sort")
     return line_agg[OUTPUT_COLUMNS]
 
-def _truck_summary(orders):
-    rows = []
+def _truck_parse_id(notes):
+    if not isinstance(notes, str): return None
+    m = re.search(r'TRUCK#\s*\S+\s*FOR\s*([0-9A-Za-z]+)', notes)
+    return m.group(1) if m else None
+
+def _truck_frames(orders):
+    rows_with = []
+    rows_missing = []
     for _, r in orders.iterrows():
-        notes = str(r.get("Notes/Comments") or "")
-        m = re.search(r'TRUCK#\s*\S+\s*FOR\s*([0-9A-Za-z]+)', notes)
-        if not m: continue
-        truck = m.group(1)
-        rows.append({
-            "Truck": truck,
+        t = _truck_parse_id(str(r.get("Notes/Comments") or ""))
+        rec = {
             "Buyers Catalog or Stock Keeping #": r["Buyers Catalog or Stock Keeping #"],
             "Qty Ordered": pd.to_numeric(r["Qty Ordered"], errors="coerce") or 0
-        })
-    if not rows: return pd.DataFrame()
-    tdf = pd.DataFrame(rows).groupby(
-        ["Truck","Buyers Catalog or Stock Keeping #"], dropna=False
-    )["Qty Ordered"].sum().reset_index()
-    tdf["BC Item#"] = tdf["Buyers Catalog or Stock Keeping #"].map(lambda k: MAP_BC.get(str(k), (None, None))[0])
-    tdf["BC Item Name"] = tdf["Buyers Catalog or Stock Keeping #"].map(lambda k: MAP_BC.get(str(k), (None, None))[1])
-    case_sz = tdf["Buyers Catalog or Stock Keeping #"].map(CASE_SIZE)
-    qty = pd.to_numeric(tdf["Qty Ordered"], errors="coerce")
-    full = pd.Series(pd.NA, index=tdf.index, dtype="Int64")
-    left = pd.Series(pd.NA, index=tdf.index, dtype="Int64")
-    mask = qty.notna() & case_sz.notna()
-    full[mask] = (qty[mask] // case_sz[mask].astype(int)).astype("Int64")
-    left[mask] = (qty[mask] % case_sz[mask].astype(int)).astype("Int64")
-    tdf["Full Cases"] = full
-    tdf["Qty Leftover"] = left
-    cols = ["Truck","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]
-    return tdf[cols]
+        }
+        if t:
+            rec["Truck"] = t
+            rows_with.append(rec)
+        else:
+            rows_missing.append(rec)
+
+    trucks_df = pd.DataFrame(rows_with) if rows_with else pd.DataFrame(columns=["Truck","Buyers Catalog or Stock Keeping #","Qty Ordered"])
+    missing_df = pd.DataFrame(rows_missing) if rows_missing else pd.DataFrame(columns=["Buyers Catalog or Stock Keeping #","Qty Ordered"])
+
+    if not trucks_df.empty:
+        trucks_df = trucks_df.groupby(["Truck","Buyers Catalog or Stock Keeping #"], dropna=False)["Qty Ordered"].sum().reset_index()
+        trucks_df["BC Item#"] = trucks_df["Buyers Catalog or Stock Keeping #"].map(lambda k: MAP_BC.get(str(k), (None, None))[0])
+        trucks_df["BC Item Name"] = trucks_df["Buyers Catalog or Stock Keeping #"].map(lambda k: MAP_BC.get(str(k), (None, None))[1])
+        case_sz = trucks_df["Buyers Catalog or Stock Keeping #"].map(CASE_SIZE)
+        qty = pd.to_numeric(trucks_df["Qty Ordered"], errors="coerce")
+        full = pd.Series(pd.NA, index=trucks_df.index, dtype="Int64")
+        left = pd.Series(pd.NA, index=trucks_df.index, dtype="Int64")
+        mask = qty.notna() & case_sz.notna()
+        full[mask] = (qty[mask] // case_sz[mask].astype(int)).astype("Int64")
+        left[mask] = (qty[mask] % case_sz[mask].astype(int)).astype("Int64")
+        trucks_df["Full Cases"] = full
+        trucks_df["Qty Leftover"] = left
+        trucks_df = trucks_df[["Truck","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]]
+        trucks_df = trucks_df.sort_values(["Truck","BC Item#"], kind="mergesort")
+
+    if not missing_df.empty:
+        missing_df = missing_df.groupby(["Buyers Catalog or Stock Keeping #"], dropna=False)["Qty Ordered"].sum().reset_index()
+        missing_df["BC Item#"] = missing_df["Buyers Catalog or Stock Keeping #"].map(lambda k: MAP_BC.get(str(k), (None, None))[0])
+        missing_df["BC Item Name"] = missing_df["Buyers Catalog or Stock Keeping #"].map(lambda k: MAP_BC.get(str(k), (None, None))[1])
+        case_sz = missing_df["Buyers Catalog or Stock Keeping #"].map(CASE_SIZE)
+        qty = pd.to_numeric(missing_df["Qty Ordered"], errors="coerce")
+        full = pd.Series(pd.NA, index=missing_df.index, dtype="Int64")
+        left = pd.Series(pd.NA, index=missing_df.index, dtype="Int64")
+        mask = qty.notna() & case_sz.notna()
+        full[mask] = (qty[mask] // case_sz[mask].astype(int)).astype("Int64")
+        left[mask] = (qty[mask] % case_sz[mask].astype(int)).astype("Int64")
+        missing_df["Full Cases"] = full
+        missing_df["Qty Leftover"] = left
+        missing_df = missing_df[["BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]]
+        missing_df = missing_df.sort_values(["BC Item#"], kind="mergesort")
+
+    return trucks_df, missing_df
+
+def _write_truck_sheet_xlsx(writer, trucks_df, missing_df):
+    wb = writer.book
+    ws = wb.add_worksheet("Trucks")
+    writer.sheets["Trucks"] = ws
+
+    fmt_left = wb.add_format({"align": "left"})
+    fmt_bold_left = wb.add_format({"align": "left", "bold": True})
+
+    row = 0
+    if not trucks_df.empty:
+        for truck_id, grp in trucks_df.groupby("Truck"):
+            ws.write(row, 0, "Truck:", fmt_bold_left)
+            ws.write(row, 1, str(truck_id), fmt_bold_left)
+            row += 1
+            headers = ["BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]
+            for col, h in enumerate(headers):
+                ws.write(row, col, h, fmt_bold_left)
+            row += 1
+            for _, r in grp.iterrows():
+                ws.write(row, 0, r.get("BC Item#", ""), fmt_left)
+                ws.write(row, 1, r.get("BC Item Name", ""), fmt_left)
+                ws.write(row, 2, int(r["Qty Ordered"]) if pd.notna(r["Qty Ordered"]) else "", fmt_left)
+                ws.write(row, 3, int(r["Full Cases"]) if pd.notna(r["Full Cases"]) else "", fmt_left)
+                ws.write(row, 4, int(r["Qty Leftover"]) if pd.notna(r["Qty Leftover"]) else "", fmt_left)
+                row += 1
+            row += 1  # blank line between trucks
+
+    # Missing truck section
+    ws.write(row, 0, "Missing Truck Information", fmt_bold_left)
+    row += 1
+    headers = ["BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]
+    for col, h in enumerate(headers):
+        ws.write(row, col, h, fmt_bold_left)
+    row += 1
+    if not missing_df.empty:
+        for _, r in missing_df.iterrows():
+            ws.write(row, 0, r.get("BC Item#", ""), fmt_left)
+            ws.write(row, 1, r.get("BC Item Name", ""), fmt_left)
+            ws.write(row, 2, int(r["Qty Ordered"]) if pd.notna(r["Qty Ordered"]) else "", fmt_left)
+            ws.write(row, 3, int(r["Full Cases"]) if pd.notna(r["Full Cases"]) else "", fmt_left)
+            ws.write(row, 4, int(r["Qty Leftover"]) if pd.notna(r["Qty Leftover"]) else "", fmt_left)
+            row += 1
+
+    ws.set_column(0, 4, 24, fmt_left)
 
 if uploaded_file:
     try:
@@ -205,13 +276,15 @@ if uploaded_file:
     except Exception as e:
         st.error(f"Could not read CSV: {e}")
         st.stop()
+
     raw.columns = [c.strip() for c in raw.columns]
     raw = raw.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
 
     sel = _schema_select(raw)
     sel = _apply_bc_and_cases(sel)
     orders = _consolidate(sel)
-    trucks = _truck_summary(orders)
+
+    trucks_df, missing_df = _truck_frames(orders)
 
     tz = pytz.timezone("America/New_York")
     ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
@@ -219,16 +292,15 @@ if uploaded_file:
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        # Orders sheet
         orders.to_excel(writer, index=False, sheet_name="Orders")
-        if not trucks.empty:
-            trucks.to_excel(writer, index=False, sheet_name="Trucks")
         wb = writer.book
-        fmt = wb.add_format({"align": "left"})
-        for name in writer.sheets:
-            ws = writer.sheets[name]
-            ncols = orders.shape[1] if name=="Orders" else (trucks.shape[1] if not trucks.empty else 0)
-            if ncols > 0:
-                ws.set_column(0, ncols-1, 20, fmt)
+        fmt_left = wb.add_format({"align": "left"})
+        ws_orders = writer.sheets["Orders"]
+        ws_orders.set_column(0, orders.shape[1]-1, 20, fmt_left)
+
+        # Trucks sheet with grouped layout
+        _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
 
     st.download_button(
         "Download Walmart Export (Excel, 2 Sheets)",
