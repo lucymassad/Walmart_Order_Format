@@ -237,7 +237,6 @@ def _write_truck_sheet_xlsx(writer, trucks_df, missing_df):
     wb = writer.book
     ws = wb.add_worksheet("Trucks")
     writer.sheets["Trucks"] = ws
-
     fmt_left = wb.add_format({"align": "left"})
     fmt_bold_left = wb.add_format({"align": "left", "bold": True})
 
@@ -275,12 +274,10 @@ def _write_truck_sheet_xlsx(writer, trucks_df, missing_df):
             ws.write(row, 4, int(r["Qty Leftover"]) if pd.notna(r["Qty Leftover"]) else "", fmt_left)
             row += 1
 
-    ws.set_column(0, 0, TRUCKS_WIDTHS["Truck"], fmt_left)
-    ws.set_column(1, 1, TRUCKS_WIDTHS["BC Item#"], fmt_left)
-    ws.set_column(2, 2, TRUCKS_WIDTHS["BC Item Name"], fmt_left)
-    ws.set_column(3, 3, TRUCKS_WIDTHS["Qty Ordered"], fmt_left)
-    ws.set_column(4, 4, TRUCKS_WIDTHS["Full Cases"], fmt_left)
-    ws.set_column(5, 5, TRUCKS_WIDTHS["Qty Leftover"], fmt_left)
+    # Trucks sheet widths: keep A, set B=70, C–E=18
+    ws.set_column(0, 0, TRUCKS_WIDTHS.get("Truck", 16), fmt_left)  # A
+    ws.set_column(1, 1, 70, fmt_left)                              # B
+    ws.set_column(2, 4, 18, fmt_left)                              # C–E
 
 if uploaded_file:
     try:
@@ -302,11 +299,18 @@ if uploaded_file:
             if c in orders.columns:
                 orders[c] = pd.to_numeric(orders[c], errors="coerce")
 
+        # Insert Truck Number between PO Number and PO Date
+        orders["Truck Number"] = orders["Notes/Comments"].map(lambda v: _truck_parse_id(str(v)) or pd.NA)
+        cols = orders.columns.tolist()
+        if "Truck Number" in cols and "PO Number" in cols:
+            cols.remove("Truck Number")
+            idx = cols.index("PO Number")
+            cols.insert(idx + 1, "Truck Number")
+            orders = orders[cols]
+
         trucks_df, missing_df = _truck_frames(orders)
 
     st.success("Done")
-
-    trucks_df, missing_df = _truck_frames(orders)
 
     tz = pytz.timezone("America/New_York")
     ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
@@ -319,13 +323,13 @@ if uploaded_file:
         wb = writer.book
         fmt_left = wb.add_format({"align": "left"})
         ws_orders = writer.sheets["Orders"]
-        ws_orders.set_row(0, None, fmt_left)  # header row left
-        # set widths per your map
+        ws_orders.set_row(0, None, fmt_left)
         col_index = {col: i for i, col in enumerate(orders.columns)}
         for col_name, width in ORDERS_WIDTHS.items():
             if col_name in col_index:
                 ws_orders.set_column(col_index[col_name], col_index[col_name], width, fmt_left)
 
+        # Trucks sheet
         _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
 
     st.download_button(
