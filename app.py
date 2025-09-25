@@ -8,7 +8,7 @@ from io import BytesIO
 
 st.set_page_config(page_title="Walmart Orders Export", layout="wide")
 st.title("Walmart Orders Export")
-uploaded_file = st.file_uploader("Upload Walmart File (.csv only)", type=["csv"])
+uploaded_file = st.file_uploader("Upload the Original SPS Downloaded Order File (.csv only)", type=["csv"])
 
 OUTPUT_COLUMNS = [
     "PO Number","PO Date","Ship Dates","Must Arrive By","PO Line #","Vendor Style",
