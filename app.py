@@ -8,7 +8,7 @@ from io import BytesIO
 
 st.set_page_config(page_title="Walmart Orders Export", layout="wide")
 st.title("Walmart Orders Export")
-uploaded_file = st.file_uploader("Upload the Original SPS Downloaded Order File (.csv only)", type=["csv"])
+uploaded_file = st.file_uploader("Upload the Original Downloaded Orders File (combined .csv)", type=["csv"])
 
 OUTPUT_COLUMNS = [
     "PO Number","PO Date","Ship Dates","Must Arrive By","PO Line #","Vendor Style",
@@ -17,8 +17,7 @@ OUTPUT_COLUMNS = [
     "Promo #","Ticket Description","Other Info / #s","Frt Terms",
     "Buying Party Name","Buying Party Location","Buying Party Address 1","Buying Party Address 2",
     "Buying Party City","Buying Party State","Buying Party Zip","Notes/Comments",
-    "Allow/Charge Service","GTIN","Buyers Catalog or Stock Keeping #","UPC/EAN","EDITxnType"
-]
+    "Allow/Charge Service","GTIN","Buyers Catalog or Stock Keeping #","UPC/EAN","EDITxnType"]
 
 DATE_COLS = ["PO Date","Ship Dates","Must Arrive By"]
 NUMERIC_TEXT_COLS = ["Qty Ordered","Unit Price","Number of Inner Packs","PO Total Amount","GTIN","UPC/EAN","PO Line #"]
@@ -51,15 +50,13 @@ MAP_BC = {
     "665106990": ("B1251580","SUNN NITRO GREEN 16-0-8 33#"),
     "656679467": ("B1260080","SUNN PALM 6-1-8 20 LB"),
     "565380343": ("B1260080","SUNN PALM 6-1-8 20 LB"),
-    "565378806": ("B1260070","SUNN PALM 6-1-8 4/10#")
-}
+    "565378806": ("B1260070","SUNN PALM 6-1-8 4/10#")}
 
 CASE_SIZE = {
     "665069485": 41, "665113710": 41, "666192291": 51, "665069486": 51,
     "665029761": 75, "665031601": 75, "665029760": 75, "665031679": 75,
     "665031685": 48, "665029764": 48, "665031697": 75, "665029763": 75,
-    "665031676": 48, "665029762": 48
-}
+    "665031676": 48, "665029762": 48}
 
 ORDERS_WIDTHS = {
     "PO Number":16,"PO Date":16,"Ship Dates":16,"Must Arrive By":16,
@@ -69,8 +66,7 @@ ORDERS_WIDTHS = {
     "Ticket Description":16,"Other Info / #s":40,"Frt Terms":30,"Buying Party Name":40,
     "Buying Party Location":30,"Buying Party Address 1":30,"Buying Party Address 2":25,
     "Buying Party City":25,"Buying Party State":25,"Buying Party Zip":25,"Notes/Comments":175,
-    "Allow/Charge Service":52,"GTIN":16,"Buyers Catalog or Stock Keeping #":16,"UPC/EAN":16,"EDITxnType":16
-}
+    "Allow/Charge Service":52,"GTIN":16,"Buyers Catalog or Stock Keeping #":16,"UPC/EAN":16,"EDITxnType":16}
 
 TRUCKS_COLS = ["Truck","BC Item#","BC Item Name","Qty Ordered","Full Cases","Qty Leftover"]
 TRUCKS_WIDTHS = {"Truck":16,"BC Item#":16,"BC Item Name":60,"Qty Ordered":14,"Full Cases":14,"Qty Leftover":14}
@@ -121,8 +117,8 @@ def _schema_select(raw):
         "PO Total Amount":["PO Total Amount","Total Amount","PO Amount","Order Total"],
         "Allow/Charge Service":["Allow/Charge Service","Allowance Service","Charge Service"],
         "EDITxnType":["EDITxnType","EDI Txn Type","Transaction Type"],
-        "Record Type":["Record Type","RecordType","Type"]
-    }
+        "Record Type":["Record Type","RecordType","Type"]}
+    
     norm = {re.sub(r"[^a-z0-9]+","", c.lower()): c for c in raw.columns}
     def find(cands):
         for cand in cands:
@@ -194,8 +190,7 @@ def _truck_frames(orders):
         t = _truck_parse_id(str(r.get("Notes/Comments") or ""))
         rec = {
             "Buyers Catalog or Stock Keeping #": r["Buyers Catalog or Stock Keeping #"],
-            "Qty Ordered": pd.to_numeric(r["Qty Ordered"], errors="coerce") or 0
-        }
+            "Qty Ordered": pd.to_numeric(r["Qty Ordered"], errors="coerce") or 0}
         if t:
             rec["Truck"] = t; rows_with.append(rec)
         else:
@@ -331,12 +326,10 @@ if uploaded_file:
             if col_name in col_index:
                 ws_orders.set_column(col_index[col_name], col_index[col_name], width, fmt_left)
 
-        # Trucks sheet (grouped layout + widths)
         _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
 
     st.download_button(
-        "Download Walmart Export (1 File, 2 Sheets)",
+        "Download File (1 File, 2 Sheets)",
         data=output.getvalue(),
         file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
