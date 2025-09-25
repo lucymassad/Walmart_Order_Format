@@ -299,7 +299,6 @@ if uploaded_file:
             if c in orders.columns:
                 orders[c] = pd.to_numeric(orders[c], errors="coerce")
 
-        # Insert Truck Number between PO Number and PO Date
         orders["Truck Number"] = orders["Notes/Comments"].map(lambda v: _truck_parse_id(str(v)) or pd.NA)
         cols = orders.columns.tolist()
         if "Truck Number" in cols and "PO Number" in cols:
@@ -308,32 +307,40 @@ if uploaded_file:
             cols.insert(idx + 1, "Truck Number")
             orders = orders[cols]
 
-        trucks_df, missing_df = _truck_frames(orders)
+            trucks_df, missing_df = _truck_frames(orders)
 
-    st.success("Done")
+st.success("Done")
 
-    tz = pytz.timezone("America/New_York")
-    ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
-    fname = f"Walmart_Export_{ts}.xlsx"
+tz = pytz.timezone("America/New_York")
+ts = datetime.now(tz).strftime("%m.%d.%Y_%H.%M")
+fname = f"Walmart_Export_{ts}.xlsx"
 
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        # Orders sheet
-        orders.to_excel(writer, index=False, sheet_name="Orders")
-        wb = writer.book
-        fmt_left = wb.add_format({"align": "left"})
-        ws_orders = writer.sheets["Orders"]
-        ws_orders.set_row(0, None, fmt_left)
-        col_index = {col: i for i, col in enumerate(orders.columns)}
-        for col_name, width in ORDERS_WIDTHS.items():
-            if col_name in col_index:
-                ws_orders.set_column(col_index[col_name], col_index[col_name], width, fmt_left)
+output = BytesIO()
+with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    # Orders sheet
+    orders.to_excel(writer, index=False, sheet_name="Orders")
+    wb = writer.book
+    fmt_left = wb.add_format({"align": "left"})
+    fmt_bold_left = wb.add_format({"align": "left", "bold": True})
 
-        # Trucks sheet
-        _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
+    ws_orders = writer.sheets["Orders"]
 
-    st.download_button(
-        "Download File (1 File, 2 Sheets)",
-        data=output.getvalue(),
-        file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ws_orders.set_row(0, None, fmt_bold_left)
+
+    col_index = {col: i for i, col in enumerate(orders.columns)}
+    for col_name, width in ORDERS_WIDTHS.items():
+        if col_name in col_index:
+            ws_orders.set_column(col_index[col_name], col_index[col_name], width, fmt_left)
+
+    fixed_15 = ["PO Number", "Truck Number", "PO Date", "Ship Dates", "Must Arrive By"]
+    for name in fixed_15:
+        if name in col_index:
+            ws_orders.set_column(col_index[name], col_index[name], 15, fmt_left)
+
+    _write_truck_sheet_xlsx(writer, trucks_df, missing_df)
+
+st.download_button(
+    "Download File (1 File, 2 Sheets)",
+    data=output.getvalue(),
+    file_name=fname,
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
